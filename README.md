@@ -140,7 +140,7 @@ $ace->ask(
 );
 ```
 
-The word Ace appears three times in the official MyGeotab API documentation. In the words Interface, Surface, and Replace. No official `MyGeotab` SDK provides native Ace integration. This one does. Ask a question, receive a response. Chat creation, prompt delivery, message group polling, and status management are handled internally. Calling `ask()` again on the same instance continues the same conversation thread. That is the entire public interface. Everything else is under the hood it where it belongs.
+The word Ace appears three times in the official MyGeotab API documentation. In the words Interface, Surface, and Replace. No official `MyGeotab` SDK provides native Ace integration. This one does. Ask a question, receive a response. Chat creation, prompt delivery, message group polling, and status management are handled internally. Calling `ask()` again on the same instance continues the same conversation thread. That is the entire public interface. Everything else is under the hood where it belongs.
 
 ---
 
@@ -203,7 +203,7 @@ volumes:
 ```
 `.env`-
 ```dotenv
-GEOTAB_USERNAME=your@email.com
+GEOTAB_USERNAME=yourusername/email
 GEOTAB_PASSWORD=yourpassword
 GEOTAB_DATABASE=your_database_name
 ```
