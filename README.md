@@ -244,7 +244,7 @@ An interactive CLI AceChat driven by stdin/stdout — the same signal and pipe p
 
 ---
 
-Here is an honest accounting: I barely wrote a line of this code. What I wrote was context. Specifications. Constraints. The engineering vision to look at a language with a thirty year reputation for blocking everything and say — no, there is a roundabout in here somewhere, and I know how to find it.
+Here is an honest accounting: I barely wrote any of this code, making only the most critical changes. What I wrote was context. Specifications. Constraints. The engineering vision to look at a language with a thirty year reputation for blocking everything and say — no, there is a roundabout in here somewhere, and I know how to find it.
 
 The LLM held the tools. I knew what to build and why. That distinction is the whole point of Vibe Coding done well.
 
