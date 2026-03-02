@@ -1,0 +1,35 @@
+# Dockerfile.bun
+FROM php:8.5-cli
+
+# Install PHP extensions your SDK needs
+RUN apt-get update && apt-get install -y \
+    libzip-dev zip unzip curl \
+    && docker-php-ext-install zip pcntl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Install Bun
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:$PATH"
+
+WORKDIR /usr/src/app
+
+COPY ./indexFeed.php .
+
+# Bun dependencies first for layer caching
+COPY server/package.json server/bun.lock* ./server/
+RUN cd server && bun install --frozen-lockfile --production
+
+# Application code
+COPY server/ ./server/
+COPY src/ ./src/
+COPY composer.json ./
+RUN composer install --optimize-autoloader --no-dev
+
+# Sessions directory
+RUN mkdir -p /usr/src/app/sessions
+
+EXPOSE 3000
+CMD ["bun", "server/server.ts"]

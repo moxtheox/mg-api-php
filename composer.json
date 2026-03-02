@@ -1,0 +1,11 @@
+{
+    "name": "geotab/sdk",
+    "autoload": {
+        "psr-4": {
+            "Geotab\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=8.4"
+    }
+}

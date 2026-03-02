@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HJSF — The Source</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        :root {
+            --green-bright:  #00ff41;
+            --green-mid:     #00cc33;
+            --green-dim:     #005515;
+            --green-ghost:   #001a07;
+            --amber:         #ffaa00;
+            --red:           #ff2222;
+            --black:         #000000;
+            --hud-bg:        rgba(0, 8, 2, 0.85);
+            --hud-border:    rgba(0, 255, 65, 0.22);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--black);
+            overflow: hidden;
+            font-family: 'Share Tech Mono', 'Courier New', monospace;
+        }
+
+        canvas { display: block; }
+
+        /* ── HUD — bottom right ───────────────────────────── */
+        #hud {
+            position: fixed;
+            bottom: 18px;
+            right: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            align-items: flex-end;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hud-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--hud-bg);
+            border: 1px solid var(--hud-border);
+            padding: 5px 10px;
+            font-size: 11px;
+            color: var(--green-mid);
+            letter-spacing: 0.08em;
+        }
+
+        .hud-label { color: var(--green-dim); }
+        .hud-val   { color: var(--green-bright); min-width: 40px; text-align: right; }
+
+        #status-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--green-bright);
+            box-shadow: 0 0 6px var(--green-bright);
+            flex-shrink: 0;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+        #status-dot.warn  { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+        #status-dot.error { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+        #status-dot.pause { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+
+        /* speed pips */
+        #speed-bar { display: flex; gap: 3px; align-items: center; }
+        .speed-pip {
+            width: 8px; height: 14px;
+            background: var(--green-ghost);
+            border: 1px solid var(--green-dim);
+            transition: background 0.12s;
+        }
+        .speed-pip.active {
+            background: var(--green-bright);
+            box-shadow: 0 0 4px var(--green-bright);
+        }
+
+        /* cache bar */
+        #cache-track {
+            width: 130px; height: 6px;
+            background: var(--green-ghost);
+            border: 1px solid var(--green-dim);
+            overflow: hidden;
+        }
+        #cache-fill {
+            height: 100%;
+            background: var(--green-bright);
+            transition: width 0.3s linear, background 0.3s;
+        }
+        #cache-fill.warn     { background: var(--amber); }
+        #cache-fill.failover { background: var(--red); }
+
+        /* ── Terminal — bottom left ───────────────────────── */
+        #terminal {
+            position: fixed;
+            bottom: 18px;
+            left: 18px;
+            width: 300px;
+            pointer-events: none;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .term-line {
+            background: var(--hud-bg);
+            border: 1px solid var(--hud-border);
+            padding: 4px 10px;
+            font-size: 11px;
+            color: var(--green-mid);
+            letter-spacing: 0.06em;
+            opacity: 1;
+            transition: opacity 1.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .term-line.fading { opacity: 0; }
+        .term-line .prompt { color: var(--green-dim); }
+        .term-line .cmd    { color: var(--green-bright); }
+        .term-line .warn   { color: var(--amber); }
+        .term-line .err    { color: var(--red); }
+
+        /* ── Key hints — top left ─────────────────────────── */
+        #keyhint {
+            position: fixed;
+            top: 18px;
+            left: 18px;
+            background: var(--hud-bg);
+            border: 1px solid var(--hud-border);
+            padding: 7px 12px;
+            font-size: 10px;
+            color: var(--green-dim);
+            letter-spacing: 0.06em;
+            line-height: 1.9;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #keyhint span { color: var(--green-mid); }
+
+        /* ── Pause overlay ────────────────────────────────── */
+        #pause-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 5;
+        }
+        #pause-overlay.visible { opacity: 1; }
+        #pause-label {
+            font-size: 13px;
+            letter-spacing: 0.35em;
+            color: var(--green-bright);
+            text-shadow: 0 0 20px var(--green-bright), 0 0 50px var(--green-mid);
+            border: 1px solid var(--hud-border);
+            padding: 10px 32px;
+            background: var(--hud-bg);
+        }
+
+        /* ── Scanlines ────────────────────────────────────── */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                to bottom,
+                transparent 0px, transparent 2px,
+                rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px
+            );
+            pointer-events: none;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<div id="pause-overlay"><div id="pause-label">[ PAUSED ]</div></div>
+
+<div id="keyhint">
+    <span>SPACE</span> &nbsp; pause / resume feed<br>
+    <span>D</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; detach / reattach feed<br>
+    <span>−</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; slow down<br>
+    <span>=</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; speed up
+</div>
+
+<div id="hud">
+    <div class="hud-row">
+        <div id="status-dot"></div>
+        <span id="status-text">INITIALIZING</span>
+    </div>
+    <div class="hud-row">
+        <span class="hud-label">SPD</span>
+        <div id="speed-bar"></div>
+        <span class="hud-val" id="speed-val">1×</span>
+    </div>
+    <div class="hud-row">
+        <span class="hud-label">CACHE</span>
+        <div id="cache-track"><div id="cache-fill"></div></div>
+        <span class="hud-val" id="cache-val">0</span>
+    </div>
+    <div class="hud-row">
+        <span class="hud-label">FAILOVER</span>
+        <span class="hud-val" id="failover-val">—</span>
+    </div>
+    <div class="hud-row">
+        <span class="hud-label">CHARS/S</span>
+        <span class="hud-val" id="cps-val">—</span>
+    </div>
+</div>
+
+<div id="terminal"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════════════════════ */
+const CACHE_SUSPEND      = 1000;
+const CACHE_MAX          = 5000;
+const CACHE_RESUME       = 100;
+const CACHE_FAILOVER_ARM = 500;
+const FAILOVER_MAX       = 500;
+const FAILOVER_MAX_LOOPS = 3;
+
+const FONT_SIZE        = 16;
+const SPEED_LEVELS     = [0.25, 0.5, 1, 2, 3, 4, 6];
+const SPEED_DEFAULT    = 2;
+const BASE_INTERVAL_MS = 45;
+
+const SLOT_CHARS   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*{}[]<>|/\\';
+const WELCOME_TEXT = 'Welcome to The Source...';
+
+/* ═══════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════ */
+let paused        = false;
+let detached      = false;   // 'd' key — feed suspended, animation runs freely
+let speedIdx      = SPEED_DEFAULT;
+let charsDrawn    = 0;
+let cpsSnapshot   = 0;
+let feedSuspended = false;
+let feedPaused    = false;
+
+const SEQ = { CASCADE: 0, SLOT: 1, HOLD: 2, LIVE: 3 };
+let sequence = SEQ.CASCADE;
+let seqStart  = null;
+
+/* ═══════════════════════════════════════════════════════════
+   CACHES
+═══════════════════════════════════════════════════════════ */
+const primaryCache  = [];
+const failoverCache = [];
+let failoverLoops   = 0;
+let failoverIdx     = 0;
+
+function pushToCache(str) {
+    // Hard cap — absorbs in-flight bursts after SUSPEND signal sent
+    if (primaryCache.length >= CACHE_MAX) return;
+    primaryCache.push(str);
+}
+
+/**
+ * Returns the next string for a column, in priority order:
+ *   1. Primary cache  (live data)
+ *   2. Failover buffer (recently seen data, up to FAILOVER_MAX_LOOPS cycles)
+ *   3. null  → caller renders random chars
+ *
+ * Side effect: when primary cache <= CACHE_FAILOVER_ARM, each consumed
+ * string is also shadowed into the failover buffer (rolling window).
+ */
+function nextString() {
+    if (primaryCache.length > 0) {
+        const s = primaryCache.shift();
+
+        // Shadow into failover rolling window when cache is getting low
+        if (primaryCache.length <= CACHE_FAILOVER_ARM) {
+            if (failoverCache.length >= FAILOVER_MAX) failoverCache.shift();
+            failoverCache.push(s);
+        }
+
+        return s;
+    }
+
+    // Primary exhausted — use failover
+    if (failoverCache.length > 0 && failoverLoops < FAILOVER_MAX_LOOPS) {
+        const s = failoverCache[failoverIdx % failoverCache.length];
+        failoverIdx++;
+        if (failoverIdx >= failoverCache.length) {
+            failoverIdx = 0;
+            failoverLoops++;
+            terminal('warn', `FAILOVER LOOP ${failoverLoops}/${FAILOVER_MAX_LOOPS}`);
+        }
+        return s;
+    }
+
+    return null;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TERMINAL LOG
+═══════════════════════════════════════════════════════════ */
+const termEl   = document.getElementById('terminal');
+const TERM_MAX = 6;
+
+function terminal(type, msg) {
+    const line   = document.createElement('div');
+    line.className = 'term-line';
+
+    const prompt = document.createElement('span');
+    prompt.className = 'prompt';
+    prompt.textContent = '> ';
+
+    const text = document.createElement('span');
+    text.className = type === 'warn' ? 'warn' : type === 'err' ? 'err' : 'cmd';
+    text.textContent = msg;
+
+    line.appendChild(prompt);
+    line.appendChild(text);
+    termEl.appendChild(line);
+
+    while (termEl.children.length > TERM_MAX) termEl.removeChild(termEl.firstChild);
+
+    setTimeout(() => {
+        line.classList.add('fading');
+        setTimeout(() => line.remove(), 1200);
+    }, 4000);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIVE STREAMER
+═══════════════════════════════════════════════════════════ */
+class LiveStreamer {
+    constructor(url) {
+        this.url    = url;
+        this.socket = null;
+    }
+
+    connect() {
+        this.socket = new WebSocket(this.url);
+
+        this.socket.onopen = () => {
+            setHudStatus('connected', 'FEED ACTIVE');
+            terminal('cmd', 'FEED CONNECTED');
+            feedSuspended = false;
+            failoverLoops = 0;
+            failoverIdx   = 0;
+        };
+
+        this.socket.onmessage = ({ data }) => {
+            const line = data.trim();
+            if (!line) return;
+            pushToCache(line);
+
+            // >= catches any burst that lands above the threshold
+            if (!feedSuspended && primaryCache.length >= CACHE_SUSPEND) {
+                this._signal('SUSPEND');
+            }
+        };
+
+        this.socket.onclose = () => {
+            setHudStatus('error', 'RECONNECTING');
+            terminal('err', 'FEED DISCONNECTED');
+            setTimeout(() => this.connect(), 2000);
+        };
+
+        this.socket.onerror = () => this.socket.close();
+    }
+
+    _signal(msg) {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(msg);
+            if (msg === 'SUSPEND') {
+                feedSuspended = true;
+                setHudStatus('warn', 'CACHE FULL');
+                terminal('warn', 'CACHE FULL — FEED SUSPENDED');
+            } else if (msg === 'RESUME') {
+                feedSuspended = false;
+                failoverLoops = 0;
+                failoverIdx   = 0;
+                setHudStatus('connected', 'FEED ACTIVE');
+                terminal('cmd', 'FEED RESUMED');
+            }
+        }
+    }
+
+    // Called every frame — handles automatic resume when cache drains
+    tick() {
+        if (feedSuspended && !feedPaused && !detached && primaryCache.length <= CACHE_RESUME) {
+            this._signal('RESUME');
+        }
+    }
+
+    suspend() { this._signal('SUSPEND'); }
+
+    resume() {
+        // Only reopen the feed if the cache has actually drained enough
+        if (primaryCache.length <= CACHE_RESUME) {
+            this._signal('RESUME');
+        } else {
+            // Cache still has data — mark as user-unpaused so tick() 
+            // will resume automatically when cache reaches the threshold
+            feedPaused = false;
+            setHudStatus('warn', 'DRAINING CACHE...');
+            terminal('warn', 'DRAINING CACHE...');
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CANVAS & RAIN COLUMNS
+═══════════════════════════════════════════════════════════ */
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+const GREEN_BRIGHT = '#00ff41';
+const GREEN_MID    = '#00cc33';
+const GREEN_DIM    = '#004d10';
+
+function randomChar() {
+    return SLOT_CHARS[Math.floor(Math.random() * SLOT_CHARS.length)];
+}
+
+class RainColumn {
+    constructor(x) {
+        this.x           = x;
+        this.y           = Math.random() * -canvas.height * 2;
+        this.speed       = 0.6 + Math.random() * 0.8;
+        this.lastDraw    = 0;
+        this.trailLen    = 22 + Math.floor(Math.random() * 20);
+        this.trail       = [];
+        this.currentStr  = null;
+        this.strPos      = 0;
+    }
+
+    _nextChar() {
+        // Continue consuming current string
+        if (this.currentStr !== null) {
+            if (this.strPos < this.currentStr.length) {
+                charsDrawn++;
+                return this.currentStr[this.strPos++];
+            }
+            // String exhausted — release
+            this.currentStr = null;
+            this.strPos     = 0;
+        }
+
+        // Claim next string
+        const str = nextString();
+        if (str !== null) {
+            this.currentStr = str;
+            this.strPos     = 0;
+            return this._nextChar();
+        }
+
+        // Nothing available — random char
+        return randomChar();
+    }
+
+    draw(ctx, timestamp) {
+        if (paused) return;
+
+        const interval = BASE_INTERVAL_MS / (SPEED_LEVELS[speedIdx] * this.speed);
+        if (timestamp - this.lastDraw < interval) return;
+        this.lastDraw = timestamp;
+
+        const ch = this._nextChar();
+        this.trail.push({ ch, y: this.y });
+        if (this.trail.length > this.trailLen) this.trail.shift();
+
+        for (let i = 0; i < this.trail.length; i++) {
+            const frac  = i / this.trail.length;
+            const alpha = frac * frac;
+
+            if (i === this.trail.length - 1) {
+                ctx.globalAlpha = 1;
+                ctx.fillStyle   = 'rgba(200, 255, 210, 1)';
+            } else if (frac > 0.6) {
+                ctx.fillStyle   = GREEN_BRIGHT;
+                ctx.globalAlpha = alpha;
+            } else if (frac > 0.25) {
+                ctx.fillStyle   = GREEN_MID;
+                ctx.globalAlpha = alpha * 0.8;
+            } else {
+                ctx.fillStyle   = GREEN_DIM;
+                ctx.globalAlpha = alpha * 0.5;
+            }
+
+            ctx.fillText(this.trail[i].ch, this.x, this.trail[i].y);
+        }
+
+        ctx.globalAlpha = 1;
+        this.y += FONT_SIZE;
+
+        if (this.y - this.trailLen * FONT_SIZE > canvas.height) {
+            this.y        = -FONT_SIZE * (5 + Math.random() * 15);
+            this.trail    = [];
+            this.trailLen = 22 + Math.floor(Math.random() * 20);
+            this.speed    = 0.6 + Math.random() * 0.8;
+        }
+    }
+}
+
+let columns = [];
+
+function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const count = Math.floor(canvas.width / FONT_SIZE);
+    columns = Array.from({ length: count }, (_, i) => new RainColumn(i * FONT_SIZE));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INTRO — Act 1: Cascade
+   Columns unlock left-to-right over CASCADE_DURATION ms,
+   each raining random chars downward.
+═══════════════════════════════════════════════════════════ */
+const CASCADE_DURATION = 2500;
+
+function drawCascade(timestamp) {
+    const elapsed  = timestamp - seqStart;
+    const progress = Math.min(elapsed / CASCADE_DURATION, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${FONT_SIZE}px 'Share Tech Mono', monospace`;
+
+    columns.forEach((col, i) => {
+        if (progress >= i / columns.length) col.draw(ctx, timestamp);
+    });
+
+    if (progress >= 1) {
+        sequence = SEQ.SLOT;
+        seqStart  = timestamp;
+        _initSlot();
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INTRO — Act 2: Slot Machine
+   Characters spin then lock left-to-right onto WELCOME_TEXT.
+═══════════════════════════════════════════════════════════ */
+const SLOT_DURATION   = 2800;
+const SLOT_LOCK_START = 0.35;
+
+let slotDisplayChars = [];
+let slotLocked       = [];
+let slotX = 0, slotY = 0;
+let slotCharW = 0;
+
+function _initSlot() {
+    slotDisplayChars = Array.from(WELCOME_TEXT).map(() => randomChar());
+    slotLocked       = new Array(WELCOME_TEXT.length).fill(false);
+
+    ctx.font = `bold ${Math.floor(FONT_SIZE * 1.4)}px 'Share Tech Mono', monospace`;
+    slotCharW = ctx.measureText('M').width;
+    const textW = slotCharW * WELCOME_TEXT.length;
+    slotX = (canvas.width  - textW) / 2;
+    slotY = canvas.height / 2 + FONT_SIZE * 0.5;
+}
+
+function drawSlot(timestamp) {
+    const elapsed  = timestamp - seqStart;
+    const progress = Math.min(elapsed / SLOT_DURATION, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${FONT_SIZE}px 'Share Tech Mono', monospace`;
+    columns.forEach(col => col.draw(ctx, timestamp));
+
+    // Spin unlocked chars
+    if (Math.random() < 0.55) {
+        for (let i = 0; i < slotDisplayChars.length; i++) {
+            if (!slotLocked[i]) slotDisplayChars[i] = randomChar();
+        }
+    }
+
+    // Lock chars left-to-right once locking phase begins
+    if (progress >= SLOT_LOCK_START) {
+        const lockP  = (progress - SLOT_LOCK_START) / (1 - SLOT_LOCK_START);
+        const nLocked = Math.floor(lockP * WELCOME_TEXT.length);
+        for (let i = 0; i < nLocked; i++) {
+            if (!slotLocked[i]) { slotLocked[i] = true; slotDisplayChars[i] = WELCOME_TEXT[i]; }
+        }
+    }
+
+    _drawWelcomeBand(1);
+
+    if (progress >= 1) { sequence = SEQ.HOLD; seqStart = timestamp; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INTRO — Act 3: Hold then dissolve
+═══════════════════════════════════════════════════════════ */
+const HOLD_DURATION = 2000;
+
+function drawHold(timestamp) {
+    const elapsed   = timestamp - seqStart;
+    const holdFade  = elapsed > HOLD_DURATION * 0.55
+        ? 1 - ((elapsed - HOLD_DURATION * 0.55) / (HOLD_DURATION * 0.45))
+        : 1;
+    const alpha = Math.max(0, holdFade);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${FONT_SIZE}px 'Share Tech Mono', monospace`;
+    columns.forEach(col => col.draw(ctx, timestamp));
+
+    _drawWelcomeBand(alpha);
+
+    if (elapsed >= HOLD_DURATION) {
+        sequence = SEQ.LIVE;
+        streamer.connect();
+        terminal('cmd', 'INITIALIZING FEED...');
+    }
+}
+
+function _drawWelcomeBand(alpha) {
+    const slotFontSize = Math.floor(FONT_SIZE * 1.4);
+    ctx.font = `bold ${slotFontSize}px 'Share Tech Mono', monospace`;
+
+    const bandH = FONT_SIZE * 3.8;
+    const bandY = slotY - FONT_SIZE * 2.2;
+
+    ctx.globalAlpha = alpha;
+
+    // Dark band
+    ctx.fillStyle = 'rgba(0,8,2,0.88)';
+    ctx.fillRect(0, bandY, canvas.width, bandH);
+
+    // Border lines
+    ctx.strokeStyle = `rgba(0,255,65,0.25)`;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, bandY);         ctx.lineTo(canvas.width, bandY);
+    ctx.moveTo(0, bandY + bandH); ctx.lineTo(canvas.width, bandY + bandH);
+    ctx.stroke();
+
+    // Draw each slot character
+    let drawX = slotX;
+    for (let i = 0; i < slotDisplayChars.length; i++) {
+        if (slotLocked[i]) {
+            ctx.fillStyle   = GREEN_BRIGHT;
+            ctx.shadowColor = GREEN_BRIGHT;
+            ctx.shadowBlur  = 14;
+        } else {
+            ctx.fillStyle  = GREEN_DIM;
+            ctx.shadowBlur = 0;
+        }
+        ctx.fillText(slotDisplayChars[i], drawX, slotY);
+        drawX += slotCharW;
+    }
+
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HUD
+═══════════════════════════════════════════════════════════ */
+const dotEl        = document.getElementById('status-dot');
+const statusText   = document.getElementById('status-text');
+const speedValEl   = document.getElementById('speed-val');
+const cacheValEl   = document.getElementById('cache-val');
+const cacheFillEl  = document.getElementById('cache-fill');
+const failoverValEl= document.getElementById('failover-val');
+const cpsValEl     = document.getElementById('cps-val');
+const speedBarEl   = document.getElementById('speed-bar');
+const pauseOverlay = document.getElementById('pause-overlay');
+
+for (let i = 0; i < SPEED_LEVELS.length; i++) {
+    const pip = document.createElement('div');
+    pip.className = 'speed-pip';
+    speedBarEl.appendChild(pip);
+}
+
+function setHudStatus(state, label) {
+    dotEl.className = state === 'connected' ? '' :
+                      state === 'warn'      ? 'warn' :
+                      state === 'pause'     ? 'pause' : 'error';
+    statusText.textContent = label;
+}
+
+function updateHUD() {
+    speedBarEl.querySelectorAll('.speed-pip').forEach((p, i) =>
+        p.classList.toggle('active', i <= speedIdx));
+    speedValEl.textContent = SPEED_LEVELS[speedIdx] + '×';
+
+    const pct = Math.min(100, (primaryCache.length / CACHE_MAX) * 100);
+    cacheFillEl.style.width = pct + '%';
+    cacheFillEl.className   = failoverLoops > 0       ? 'failover' :
+                              primaryCache.length <= CACHE_FAILOVER_ARM ? 'warn' : '';
+    cacheValEl.textContent  = primaryCache.length;
+
+    failoverValEl.textContent = failoverCache.length > 0
+        ? `${failoverCache.length} [${failoverLoops}/${FAILOVER_MAX_LOOPS}]`
+        : '—';
+
+    cpsValEl.textContent = cpsSnapshot > 0 ? cpsSnapshot.toLocaleString() : '—';
+}
+
+setInterval(() => { cpsSnapshot = charsDrawn; charsDrawn = 0; }, 1000);
+
+/* ═══════════════════════════════════════════════════════════
+   KEYBOARD
+═══════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+    if (sequence !== SEQ.LIVE) return;   // ignore keys during intro
+
+    switch (e.key) {
+        case ' ':
+            e.preventDefault();
+            paused = !paused;
+            feedPaused = paused;
+            pauseOverlay.classList.toggle('visible', paused);
+
+            if (paused) {
+                // Suspend feed unless detached mode already did it
+                if (!detached) streamer.suspend();
+                setHudStatus('pause', 'PAUSED');
+                terminal('cmd', 'PAUSED — FEED SUSPENDED');
+            } else {
+                terminal('cmd', 'RESUMED');
+                // Only resume the feed if detached mode isn't holding it
+                if (!detached) streamer.resume();
+                else setHudStatus('warn', 'DETACHED — FEED SUSPENDED');
+            }
+            break;
+
+        case 'd':
+        case 'D':
+            detached = !detached;
+            if (detached) {
+                streamer.suspend();
+                setHudStatus('warn', 'DETACHED — FEED SUSPENDED');
+                terminal('warn', 'DETACHED MODE — FAILOVER ACTIVE');
+            } else {
+                // Re-entering attached mode — resume feed if not also paused
+                if (!paused) {
+                    streamer.resume();
+                } else {
+                    setHudStatus('pause', 'PAUSED');
+                }
+                terminal('cmd', 'DETACHED MODE OFF');
+            }
+            break;
+
+        case '-':
+        case '_':
+            speedIdx = Math.max(0, speedIdx - 1);
+            terminal('cmd', `SPEED ${SPEED_LEVELS[speedIdx]}×`);
+            break;
+
+        case '=':
+        case '+':
+            speedIdx = Math.min(SPEED_LEVELS.length - 1, speedIdx + 1);
+            terminal('cmd', `SPEED ${SPEED_LEVELS[speedIdx]}×`);
+            break;
+    }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN LOOP
+═══════════════════════════════════════════════════════════ */
+function animate(timestamp) {
+    if (seqStart === null) seqStart = timestamp;
+
+    ctx.font = `${FONT_SIZE}px 'Share Tech Mono', monospace`;
+
+    switch (sequence) {
+        case SEQ.CASCADE: drawCascade(timestamp); break;
+        case SEQ.SLOT:    drawSlot(timestamp);    break;
+        case SEQ.HOLD:    drawHold(timestamp);    break;
+
+        case SEQ.LIVE:
+            // When paused: skip the fade rect entirely so all trails stay fully
+            // illuminated on screen — the canvas freezes in place, readable.
+            // When running: apply the semi-transparent overlay for the fade effect.
+            if (!paused) {
+                ctx.fillStyle = 'rgba(0,0,0,0.13)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                columns.forEach(col => col.draw(ctx, timestamp));
+                streamer.tick();
+            }
+            break;
+    }
+
+    updateHUD();
+    requestAnimationFrame(animate);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════════════ */
+// WS connection is intentionally deferred until Act 3 completes
+const streamer = new LiveStreamer('ws://localhost:3000/geotab-feed');
+
+window.addEventListener('resize', resize);
+resize();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
